@@ -84,7 +84,7 @@
             text-align: center;
             box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
             transition: transform 0.3s ease, box-shadow 0.3s ease;
-            cursor: pointer; /* Makes it clear you can click */
+            cursor: pointer;
         }
 
         .card:hover {
@@ -135,12 +135,11 @@
             grid-column: 1 / -1;
         }
 
-        /* --- NEW MODAL STYLES --- */
         .modal-overlay {
             display: none;
             position: fixed;
             top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(15, 23, 42, 0.7); /* Dark semi-transparent background */
+            background: rgba(15, 23, 42, 0.7);
             z-index: 1000;
             justify-content: center;
             align-items: center;
@@ -256,283 +255,6 @@
         const bookGrid = document.getElementById('bookGrid');
         const searchInput = document.getElementById('searchInput');
         
-        // Modal Elements
-        const modal = document.getElementById('bookModal');
-        const closeModalBtn = document.getElementById('closeModal');
-        const modalCover = document.getElementById('modalCover');
-        const modalTitle = document.getElementById('modalTitle');
-        const modalAuthor = document.getElementById('modalAuthor');
-        const modalMeta = document.getElementById('modalMeta');
-        const modalDesc = document.getElementById('modalDesc');
-        const modalTags = document.getElementById('modalTags');
-
-        let booksArray = [];
-
-        fetch('books.json')
-            .then(response => response.json())
-            .then(data => {
-                booksArray = Object.values(data);
-                searchInput.disabled = false;
-                displayBooks(booksArray);
-
-                searchInput.addEventListener('keyup', (e) => {
-                    const searchTerm = e.target.value.toLowerCase();
-                    const filteredBooks = booksArray.filter(book => {
-                        const titleMatch = (book.title || "").toLowerCase().includes(searchTerm);
-                        const authorMatch = (book.primaryauthor || "").toLowerCase().includes(searchTerm);
-                        return titleMatch || authorMatch;
-                    });
-                    displayBooks(filteredBooks);
-                });
-            })
-            .catch(error => {
-                console.error("Error loading books:", error);
-                bookGrid.innerHTML = `<div class="error-message"><p>Could not load books.json.</p></div>`;
-            });
-
-        // The API Waterfall
-        async function findBookCover(isbn, imgElement) {
-            if (!isbn) {
-                imgElement.src = 'https://placehold.co/140x200/e2e8f0/64748b?text=No+ISBN';
-                return;
-            }
-            try {
-                const gbResponse = await fetch(`https://www.googleapis.com/books/v1/volumes?q=isbn:${isbn}`);
-                const gbData = await gbResponse.json();
-                if (gbData.items && gbData.items[0].volumeInfo.imageLinks) {
-                    imgElement.src = gbData.items[0].volumeInfo.imageLinks.thumbnail.replace('http:', 'https:');
-                    return;
-                }
-                const obdResponse = await fetch(`https://api.openbd.jp/v1/get?isbn=${isbn}`);
-                const obdData = await obdResponse.json();
-                if (obdData && obdData[0] && obdData[0].summary && obdData[0].summary.cover) {
-                    imgElement.src = obdData[0].summary.cover;
-                    return; 
-                }
-                const olUrl = `https://covers.openlibrary.org/b/isbn/${isbn}-M.jpg?default=false`;
-                const olResponse = await fetch(olUrl);
-                if (olResponse.ok) {
-                    imgElement.src = olUrl;
-                    return;
-                }
-                imgElement.src = 'https://placehold.co/140x200/e2e8f0/64748b?text=Cover+Not\\nAvailable';
-            } catch (error) {
-                imgElement.src = 'https://placehold.co/140x200/e2e8f0/64748b?text=Network\\nError';
-            }
-        }
-
-        // --- NEW MODAL LOGIC ---
-        function openModal(book, coverSrc, isbn) {
-            // 1. Set the static info we already have from books.json
-            modalTitle.textContent = book.title || "Unknown Title";
-            modalAuthor.textContent = book.primaryauthor || "Unknown Author";
-            modalCover.src = coverSrc; // Use the image that was already found
-            
-            let metaString = [];
-            if (book.publication) metaString.push(book.publication);
-            if (book.date) metaString.push(`Year: ${book.date}`);
-            metaString.push(`ISBN: ${isbn || 'N/A'}`);
-            modalMeta.textContent = metaString.join(' • ');
-
-            modalDesc.innerHTML = "<i>Fetching book details...</i>";
-            modalTags.innerHTML = "";
-
-            // Show the modal
-            modal.classList.add('active');
-
-            // 2. Fetch extra juicy details from Google Books API
-            if (isbn) {
-                fetch(`https://www.googleapis.com/books/v1/volumes?q=isbn:${isbn}`)
-                    .then(response => response.json())
-                    .then(data => {
-                        if (data.items && data.items[0].volumeInfo) {
-                            const info = data.items[0].volumeInfo;
-                            
-                            // Set Description
-                            if (info.description) {
-                                modalDesc.innerHTML = info.description;
-                            } else {
-                                modalDesc.innerHTML = "No detailed description available for this title.";
-                            }
-
-                            // Set Categories/Tags
-                            if (info.categories) {
-                                info.categories.forEach(category => {
-                                    const span = document.createElement('span');
-                                    span.className = 'tag';
-                                    span.textContent = category;
-                                    modalTags.appendChild(span);
-                                });
-                            }
-                            
-                            // Add Page Count to Meta if available
-                            if (info.pageCount) {
-                                modalMeta.textContent += ` • ${info.pageCount} Pages`;
-                            }
-                        } else {
-                            modalDesc.innerHTML = "No detailed description found in the public database.";
-                        }
-                    })
-                    .catch(() => {
-                        modalDesc.innerHTML = "Could not load additional details at this time.";
-                    });
-            } else {
-                modalDesc.innerHTML = "No ISBN available to fetch additional details.";
-            }
-        }
-
-        // Close Modal Events
-        closeModalBtn.addEventListener('click', () => {
-            modal.classList.remove('active');
-        });
-
-        // Close if clicking outside the white box
-        modal.addEventListener('click', (e) => {
-            if (e.target === modal) {
-                modal.classList.remove('active');
-            }
-        });
-
-        function displayBooks(books) {
-            bookGrid.innerHTML = ''; 
-            
-            if (books.length === 0) {
-                bookGrid.innerHTML = '<p style="grid-column: 1/-1; text-align: center; color: #64748b;">No books found matching your search.</p>';
-                return;
-            }
-
-            books.forEach(book => {
-                const title = book.title || "Unknown Title";
-                const author = book.primaryauthor || "Unknown Author";
-                
-                let isbn = book.originalisbn || "";
-                if (!isbn && book.isbn) {
-                   isbn = Array.isArray(book.isbn) ? book.isbn[0] : (book.isbn["0"] || "");
-                }
-                
-                const card = document.createElement('div');
-                card.className = 'card';
-                
-                const img = document.createElement('img');
-                img.className = 'book-cover';
-                img.alt = `Cover of ${title}`;
-                img.src = 'https://placehold.co/140x200/e2e8f0/64748b?text=Loading...'; 
-
-                const details = document.createElement('div');
-                details.innerHTML = `
-                    <h2 class="title">${title}</h2>
-                    <p class="author">${author}</p>
-                    <p class="isbn-badge">ISBN: ${isbn || 'N/A'}</p>
-                `;
-
-                card.appendChild(img);
-                card.appendChild(details);
-                bookGrid.appendChild(card);
-
-                // --- ATTACH CLICK EVENT ---
-                card.addEventListener('click', () => openModal(book, img.src, isbn));
-
-                if (book.local_cover) {
-                    img.src = book.local_cover; 
-                } else {
-                    findBookCover(isbn, img);
-                }
-            });
-        }
-    </script>
-</body>
-</html>
-            margin: 0 0 8px 0;
-            color: var(--primary-color);
-            display: -webkit-box;
-            -webkit-line-clamp: 3;
-            -webkit-box-orient: vertical;
-            overflow: hidden;
-        }
-
-        .author {
-            font-size: 14px;
-            color: var(--text-muted);
-            margin: 0;
-            font-weight: 600;
-        }
-        
-        .isbn-badge {
-            margin-top: auto;
-            padding-top: 15px;
-            font-size: 11px;
-            color: #94a3b8;
-        }
-
-        .error-message {
-            text-align: center;
-            color: #ef4444;
-            font-weight: 600;
-            grid-column: 1 / -1;
-        }
-    </style>
-</head>
-<body>
-
-    <div class="header-container">
-        <h1>Department Of Physics University Of Jammu Library</h1>
-        <div class="search-wrapper">
-            <input type="text" id="searchInput" placeholder="Search by title or author..." disabled>
-        </div>
-    </div>
-
-    <div class="library-container">
-        <div class="grid" id="bookGrid"></div>
-    </div>
-
-        <script>
-        const bookGrid = document.getElementById('bookGrid');
-        const searchInput = document.getElementById('searchInput');
-        let booksArray = [];
-
-        // 1. Fetch the external JSON data
-        fetch('books.json')
-            .then(response => response.json())
-            .then(data => {
-                booksArray = Object.values(data);
-                searchInput.disabled = false;
-                displayBooks(booksArray);
-
-                searchInput.addEventListener('keyup', (e) => {
-                    const searchTerm = e.target.value.toLowerCase();
-                    const filteredBooks = booksArray.filter(book => {
-                        const titleMatch = (book.title || "").toLowerCase().includes(searchTerm);
-                        const authorMatch = (book.primaryauthor || "").toLowerCase().includes(searchTerm);
-                        return titleMatch || authorMatch;
-                    });
-                    displayBooks(filteredBooks);
-                });
-            })
-            .catch(error => {
-                console.error("Error loading books:", error);
-                bookGrid.innerHTML = `<div class="error-message"><p>Could not load books.json.</p></div>`;
-            });
-
-        // 2. The Advanced API Waterfall Function
-        async function findBookCover(isbn, imgElement) {
-            if (!isbn) {
-                imgElement.src = 'https://placehold.co/140x200/e2e8f0/64748b?text=No+ISBN';
-                return;
-            }
-
-            try {
-                // API 1: Google Books (Best quality for academic texts)
-                const gbResponse = await fetch(`https://www.googleapis.com/books/v1/volumes?q=isbn:${isbn}`);
-                const gbData = await gbResponse.json();
-                if (gbData.items && gbData.items[0].volumeInfo.imageLinks) {
-                    imgElement.src = gbData.items[0].volumeInfo.imageLinks.thumbnail.replace('http:', 'https:');
-                    return; // Stop searching! We found it.
-                }
-
-    <script>
-        const bookGrid = document.getElementById('bookGrid');
-        const searchInput = document.getElementById('searchInput');
-        
         const modal = document.getElementById('bookModal');
         const closeModalBtn = document.getElementById('closeModal');
         const modalCover = document.getElementById('modalCover');
@@ -595,13 +317,11 @@
             }
         }
 
-        // --- UPDATED SMARTER MODAL LOGIC ---
         function openModal(book, coverSrc, isbn) {
             modalTitle.textContent = book.title || "Unknown Title";
             modalAuthor.textContent = book.primaryauthor || "Unknown Author";
             modalCover.src = coverSrc; 
             
-            // Build the meta string, including stock count
             let metaString = [];
             if (book.publication) metaString.push(book.publication);
             if (book.date) metaString.push(`Year: ${book.date}`);
@@ -617,30 +337,38 @@
                 try {
                     let info = null;
                     
-                    // Step 1: Try exact ISBN
+                    // Attempt 1: Strict ISBN Search
                     if (isbn) {
                         const res1 = await fetch(`https://www.googleapis.com/books/v1/volumes?q=isbn:${isbn}`);
-                        const data1 = await res1.json();
-                        if (data1.items && data1.items[0].volumeInfo && data1.items[0].volumeInfo.description) {
-                            info = data1.items[0].volumeInfo;
+                        if (res1.ok) {
+                            const data1 = await res1.json();
+                            if (data1.items && data1.items[0].volumeInfo && data1.items[0].volumeInfo.description) {
+                                info = data1.items[0].volumeInfo;
+                            }
                         }
                     }
                     
-                    // Step 2: Fallback to Title & Author (Removes specific edition tags like "4TH ED." to widen search)
+                    // Attempt 2: Broad Title Search (The fix from your debugger!)
                     if (!info && book.title) {
+                        // Strip out things like "(4TH ED.)" to make the search broader
                         const cleanTitle = book.title.replace(/\(.*\)/g, '').trim();
-                        const authorSearch = book.primaryauthor ? `+inauthor:${encodeURIComponent(book.primaryauthor)}` : '';
-                        const res2 = await fetch(`https://www.googleapis.com/books/v1/volumes?q=intitle:${encodeURIComponent(cleanTitle)}${authorSearch}`);
-                        const data2 = await res2.json();
+                        // Just search for the raw title and author string
+                        const searchQuery = encodeURIComponent(`${cleanTitle} ${book.primaryauthor || ''}`);
+                        const res2 = await fetch(`https://www.googleapis.com/books/v1/volumes?q=${searchQuery}`);
                         
-                        if (data2.items) {
-                            // Loop through results to find the first one that actually has a description
-                            const validItem = data2.items.find(item => item.volumeInfo && item.volumeInfo.description);
-                            if (validItem) info = validItem.volumeInfo;
+                        if (res2.ok) {
+                            const data2 = await res2.json();
+                            if (data2.items) {
+                                // Find the first result that actually has a description
+                                const validItem = data2.items.find(item => item.volumeInfo && item.volumeInfo.description);
+                                if (validItem) {
+                                    info = validItem.volumeInfo;
+                                }
+                            }
                         }
                     }
 
-                    // Step 3: Apply Data or show manual summary
+                    // Display the results
                     if (info) {
                         modalDesc.innerHTML = info.description;
                         if (info.categories) {
@@ -652,15 +380,22 @@
                             });
                         }
                     } else {
-                        // If it fails, check if you wrote a custom summary in books.json
+                        // Attempt 3: Local Fallback
                         if (book.summary) {
-                            modalDesc.innerHTML = book.summary;
+                            modalDesc.innerHTML = `<p style="color: #64748b; font-size: 13px; margin-bottom: 10px;"><em>(Global database empty. Showing local record).</em></p>
+                                                   <p><strong>Summary:</strong> ${book.summary}</p>`;
                         } else {
-                            modalDesc.innerHTML = "No extended description available in global databases. Please check the physical copy for more details.";
+                            modalDesc.innerHTML = "No detailed description available online. Please add a manual summary to your books.json file.";
                         }
                     }
+
                 } catch (error) {
-                    modalDesc.innerHTML = "Could not load additional details due to a network timeout.";
+                    if (book.summary) {
+                         modalDesc.innerHTML = `<p style="color: #64748b; font-size: 13px; margin-bottom: 10px;"><em>(Network Error. Showing local record).</em></p>
+                                                <p><strong>Summary:</strong> ${book.summary}</p>`;
+                    } else {
+                         modalDesc.innerHTML = "Network timeout. Could not load additional details at this time.";
+                    }
                 }
             }
             fetchDetails();
@@ -712,7 +447,5 @@
             });
         }
     </script>
-
-
 </body>
 </html>
