@@ -529,44 +529,155 @@
                     return; // Stop searching! We found it.
                 }
 
-                // API 2: openBD (Great free API, often has global/international editions)
+    <script>
+        const bookGrid = document.getElementById('bookGrid');
+        const searchInput = document.getElementById('searchInput');
+        
+        const modal = document.getElementById('bookModal');
+        const closeModalBtn = document.getElementById('closeModal');
+        const modalCover = document.getElementById('modalCover');
+        const modalTitle = document.getElementById('modalTitle');
+        const modalAuthor = document.getElementById('modalAuthor');
+        const modalMeta = document.getElementById('modalMeta');
+        const modalDesc = document.getElementById('modalDesc');
+        const modalTags = document.getElementById('modalTags');
+
+        let booksArray = [];
+
+        fetch('books.json')
+            .then(response => response.json())
+            .then(data => {
+                booksArray = Object.values(data);
+                searchInput.disabled = false;
+                displayBooks(booksArray);
+
+                searchInput.addEventListener('keyup', (e) => {
+                    const searchTerm = e.target.value.toLowerCase();
+                    const filteredBooks = booksArray.filter(book => {
+                        const titleMatch = (book.title || "").toLowerCase().includes(searchTerm);
+                        const authorMatch = (book.primaryauthor || "").toLowerCase().includes(searchTerm);
+                        return titleMatch || authorMatch;
+                    });
+                    displayBooks(filteredBooks);
+                });
+            })
+            .catch(error => {
+                bookGrid.innerHTML = `<div class="error-message"><p>Could not load books.json.</p></div>`;
+            });
+
+        async function findBookCover(isbn, imgElement) {
+            if (!isbn) {
+                imgElement.src = 'https://placehold.co/140x200/e2e8f0/64748b?text=No+ISBN';
+                return;
+            }
+            try {
+                const gbResponse = await fetch(`https://www.googleapis.com/books/v1/volumes?q=isbn:${isbn}`);
+                const gbData = await gbResponse.json();
+                if (gbData.items && gbData.items[0].volumeInfo.imageLinks) {
+                    imgElement.src = gbData.items[0].volumeInfo.imageLinks.thumbnail.replace('http:', 'https:');
+                    return;
+                }
                 const obdResponse = await fetch(`https://api.openbd.jp/v1/get?isbn=${isbn}`);
                 const obdData = await obdResponse.json();
                 if (obdData && obdData[0] && obdData[0].summary && obdData[0].summary.cover) {
                     imgElement.src = obdData[0].summary.cover;
-                    return; // Stop searching! We found it.
+                    return; 
                 }
-
-                // API 3: Open Library (Using fetch to verify the image actually exists)
                 const olUrl = `https://covers.openlibrary.org/b/isbn/${isbn}-M.jpg?default=false`;
                 const olResponse = await fetch(olUrl);
                 if (olResponse.ok) {
                     imgElement.src = olUrl;
-                    return; // Stop searching! We found it.
+                    return;
                 }
-
-                // API 4: Everything Failed. Use standard placeholder.
                 imgElement.src = 'https://placehold.co/140x200/e2e8f0/64748b?text=Cover+Not\\nAvailable';
-
             } catch (error) {
-                console.error(`Error fetching cover for ISBN ${isbn}:`, error);
                 imgElement.src = 'https://placehold.co/140x200/e2e8f0/64748b?text=Network\\nError';
             }
         }
 
-        // 3. The Display Function
+        // --- UPDATED SMARTER MODAL LOGIC ---
+        function openModal(book, coverSrc, isbn) {
+            modalTitle.textContent = book.title || "Unknown Title";
+            modalAuthor.textContent = book.primaryauthor || "Unknown Author";
+            modalCover.src = coverSrc; 
+            
+            // Build the meta string, including stock count
+            let metaString = [];
+            if (book.publication) metaString.push(book.publication);
+            if (book.date) metaString.push(`Year: ${book.date}`);
+            metaString.push(`ISBN: ${isbn || 'N/A'}`);
+            if (book.copies) metaString.push(`Copies in Stock: ${book.copies}`); 
+            
+            modalMeta.textContent = metaString.join(' • ');
+            modalDesc.innerHTML = "<i>Searching global databases for details...</i>";
+            modalTags.innerHTML = "";
+            modal.classList.add('active');
+
+            async function fetchDetails() {
+                try {
+                    let info = null;
+                    
+                    // Step 1: Try exact ISBN
+                    if (isbn) {
+                        const res1 = await fetch(`https://www.googleapis.com/books/v1/volumes?q=isbn:${isbn}`);
+                        const data1 = await res1.json();
+                        if (data1.items && data1.items[0].volumeInfo && data1.items[0].volumeInfo.description) {
+                            info = data1.items[0].volumeInfo;
+                        }
+                    }
+                    
+                    // Step 2: Fallback to Title & Author (Removes specific edition tags like "4TH ED." to widen search)
+                    if (!info && book.title) {
+                        const cleanTitle = book.title.replace(/\(.*\)/g, '').trim();
+                        const authorSearch = book.primaryauthor ? `+inauthor:${encodeURIComponent(book.primaryauthor)}` : '';
+                        const res2 = await fetch(`https://www.googleapis.com/books/v1/volumes?q=intitle:${encodeURIComponent(cleanTitle)}${authorSearch}`);
+                        const data2 = await res2.json();
+                        
+                        if (data2.items) {
+                            // Loop through results to find the first one that actually has a description
+                            const validItem = data2.items.find(item => item.volumeInfo && item.volumeInfo.description);
+                            if (validItem) info = validItem.volumeInfo;
+                        }
+                    }
+
+                    // Step 3: Apply Data or show manual summary
+                    if (info) {
+                        modalDesc.innerHTML = info.description;
+                        if (info.categories) {
+                            info.categories.forEach(category => {
+                                const span = document.createElement('span');
+                                span.className = 'tag';
+                                span.textContent = category;
+                                modalTags.appendChild(span);
+                            });
+                        }
+                    } else {
+                        // If it fails, check if you wrote a custom summary in books.json
+                        if (book.summary) {
+                            modalDesc.innerHTML = book.summary;
+                        } else {
+                            modalDesc.innerHTML = "No extended description available in global databases. Please check the physical copy for more details.";
+                        }
+                    }
+                } catch (error) {
+                    modalDesc.innerHTML = "Could not load additional details due to a network timeout.";
+                }
+            }
+            fetchDetails();
+        }
+
+        closeModalBtn.addEventListener('click', () => { modal.classList.remove('active'); });
+        modal.addEventListener('click', (e) => { if (e.target === modal) modal.classList.remove('active'); });
+
         function displayBooks(books) {
             bookGrid.innerHTML = ''; 
-            
             if (books.length === 0) {
                 bookGrid.innerHTML = '<p style="grid-column: 1/-1; text-align: center; color: #64748b;">No books found matching your search.</p>';
                 return;
             }
-
             books.forEach(book => {
                 const title = book.title || "Unknown Title";
                 const author = book.primaryauthor || "Unknown Author";
-                
                 let isbn = book.originalisbn || "";
                 if (!isbn && book.isbn) {
                    isbn = Array.isArray(book.isbn) ? book.isbn[0] : (book.isbn["0"] || "");
@@ -575,7 +686,6 @@
                 const card = document.createElement('div');
                 card.className = 'card';
                 
-                // Create image element with an initial loading state
                 const img = document.createElement('img');
                 img.className = 'book-cover';
                 img.alt = `Cover of ${title}`;
@@ -592,15 +702,17 @@
                 card.appendChild(details);
                 bookGrid.appendChild(card);
 
-                // Start the background process to hunt down the image!
+                card.addEventListener('click', () => openModal(book, img.src, isbn));
+
                 if (book.local_cover) {
-                    img.src = book.local_cover; // Always prioritize your manual upload first
+                    img.src = book.local_cover; 
                 } else {
                     findBookCover(isbn, img);
                 }
             });
         }
     </script>
+
 
 </body>
 </html>
