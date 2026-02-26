@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Department Of Physics University Of Jammu Library</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary-color: #0f172a;
+            --accent-color: #3b82f6;
+            --bg-color: #f8fafc;
+            --card-bg: #ffffff;
+            --text-main: #1e293b;
+            --text-muted: #64748b;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            margin: 0;
+            padding: 0;
+        }
+
+        .header-container {
+            background-color: var(--primary-color);
+            color: white;
+            padding: 40px 20px;
+            text-align: center;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        }
+
+        .header-container h1 {
+            margin: 0 0 20px 0;
+            font-size: 28px;
+            font-weight: 700;
+            letter-spacing: -0.5px;
+        }
+
+        .search-wrapper {
+            max-width: 500px;
+            margin: 0 auto;
+            position: relative;
+        }
+
+        #searchInput {
+            width: 100%;
+            padding: 14px 20px;
+            font-size: 16px;
+            font-family: 'Inter', sans-serif;
+            border: 2px solid transparent;
+            border-radius: 30px;
+            outline: none;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+            transition: all 0.3s ease;
+            box-sizing: border-box;
+        }
+
+        #searchInput:focus {
+            border-color: var(--accent-color);
+            box-shadow: 0 4px 20px rgba(59, 130, 246, 0.4);
+        }
+
+        .library-container {
+            max-width: 1200px;
+            margin: 40px auto;
+            padding: 0 20px;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+            gap: 30px;
+        }
+
+        .card {
+            background: var(--card-bg);
+            border-radius: 12px;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+
+        .card:hover {
+            transform: translateY(-8px);
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+        }
+
+        .book-cover {
+            width: 140px;
+            height: 200px;
+            object-fit: cover;
+            border-radius: 4px;
+            box-shadow: 3px 3px 10px rgba(0,0,0,0.15);
+            margin-bottom: 20px;
+            background-color: #e2e8f0;
+        }
+
+        .title {
+            font-size: 16px;
+            font-weight: 700;
+            line-height: 1.4;
+            margin: 0 0 8px 0;
+            color: var(--primary-color);
+            display: -webkit-box;
+            -webkit-line-clamp: 3;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
+
+        .author {
+            font-size: 14px;
+            color: var(--text-muted);
+            margin: 0;
+            font-weight: 600;
+        }
+        
+        .isbn-badge {
+            margin-top: auto;
+            padding-top: 15px;
+            font-size: 11px;
+            color: #94a3b8;
+        }
+
+        .error-message {
+            text-align: center;
+            color: #ef4444;
+            font-weight: 600;
+            grid-column: 1 / -1;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="header-container">
+        <h1>Department Of Physics University Of Jammu Library</h1>
+        <div class="search-wrapper">
+            <input type="text" id="searchInput" placeholder="Search by title or author..." disabled>
+        </div>
+    </div>
+
+    <div class="library-container">
+        <div class="grid" id="bookGrid"></div>
+    </div>
+
+    <script>
+        const bookGrid = document.getElementById('bookGrid');
+        const searchInput = document.getElementById('searchInput');
+        let booksArray = [];
+
+        // 1. Fetch the external JSON data
+        fetch('books.json')
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('Network response was not ok');
+                }
+                return response.json();
+            })
+            .then(data => {
+                booksArray = Object.values(data);
+                
+                // Enable search bar once data is loaded
+                searchInput.disabled = false;
+                
+                // Display initial books
+                displayBooks(booksArray);
+
+                // Set up search filtering
+                searchInput.addEventListener('keyup', (e) => {
+                    const searchTerm = e.target.value.toLowerCase();
+                    const filteredBooks = booksArray.filter(book => {
+                        const titleMatch = (book.title || "").toLowerCase().includes(searchTerm);
+                        const authorMatch = (book.primaryauthor || "").toLowerCase().includes(searchTerm);
+                        return titleMatch || authorMatch;
+                    });
+                    displayBooks(filteredBooks);
+                });
+            })
+            .catch(error => {
+                console.error("Error loading books:", error);
+                bookGrid.innerHTML = `
+                    <div class="error-message">
+                        <p>Could not load books.json.</p>
+                        <p>Note: If you are opening this file directly from your computer (file://), modern browsers block loading local JSON files for security reasons. You will need to view this through a local web server or upload it to a web host.</p>
+                    </div>`;
+            });
+
+        // 2. The display function
+        function displayBooks(books) {
+            bookGrid.innerHTML = ''; 
+            
+            if (books.length === 0) {
+                bookGrid.innerHTML = '<p style="grid-column: 1/-1; text-align: center; color: #64748b;">No books found matching your search.</p>';
+                return;
+            }
+
+            books.forEach(book => {
+                const title = book.title || "Unknown Title";
+                const author = book.primaryauthor || "Unknown Author";
+                
+                // Try originalisbn first, fallback to standard isbn array/object if needed based on your original JSON structure
+                let isbn = book.originalisbn || "";
+                if (!isbn && book.isbn) {
+                   isbn = Array.isArray(book.isbn) ? book.isbn[0] : (book.isbn["0"] || "");
+                }
+                
+                const card = document.createElement('div');
+                card.className = 'card';
+                
+                const img = document.createElement('img');
+                img.className = 'book-cover';
+                img.alt = `Cover of ${title}`;
+                img.src = 'https://via.placeholder.com/140x200/e2e8f0/64748b?text=Loading...'; 
+
+                const details = document.createElement('div');
+                details.innerHTML = `
+                    <h2 class="title">${title}</h2>
+                    <p class="author">${author}</p>
+                    <p class="isbn-badge">ISBN: ${isbn || 'N/A'}</p>
+                `;
+
+                card.appendChild(img);
+                card.appendChild(details);
+                bookGrid.appendChild(card);
+
+                if (isbn) {
+                    fetch(`https://www.googleapis.com/books/v1/volumes?q=isbn:${isbn}`)
+                        .then(response => response.json())
+                        .then(data => {
+                            if (data.items && data.items[0].volumeInfo.imageLinks) {
+                                img.src = data.items[0].volumeInfo.imageLinks.thumbnail.replace('http:', 'https:');
+                            } else {
+                                img.src = `https://covers.openlibrary.org/b/isbn/${isbn}-M.jpg?default=false`;
+                            }
+                        })
+                        .catch(() => {
+                            img.src = `https://covers.openlibrary.org/b/isbn/${isbn}-M.jpg?default=false`;
+                        });
+                } else {
+                    img.src = 'https://via.placeholder.com/140x200/e2e8f0/64748b?text=No+ISBN';
+                }
+
+                img.onerror = function() {
+                    this.onerror = null; 
+                    this.src = 'https://via.placeholder.com/140x200/e2e8f0/64748b?text=Cover+Not+Found';
+                };
+            });
+        }
+    </script>
+</body>
+</html>
