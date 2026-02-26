@@ -148,29 +148,19 @@
         <div class="grid" id="bookGrid"></div>
     </div>
 
-    <script>
+        <script>
         const bookGrid = document.getElementById('bookGrid');
         const searchInput = document.getElementById('searchInput');
         let booksArray = [];
 
         // 1. Fetch the external JSON data
         fetch('books.json')
-            .then(response => {
-                if (!response.ok) {
-                    throw new Error('Network response was not ok');
-                }
-                return response.json();
-            })
+            .then(response => response.json())
             .then(data => {
                 booksArray = Object.values(data);
-                
-                // Enable search bar once data is loaded
                 searchInput.disabled = false;
-                
-                // Display initial books
                 displayBooks(booksArray);
 
-                // Set up search filtering
                 searchInput.addEventListener('keyup', (e) => {
                     const searchTerm = e.target.value.toLowerCase();
                     const filteredBooks = booksArray.filter(book => {
@@ -183,14 +173,51 @@
             })
             .catch(error => {
                 console.error("Error loading books:", error);
-                bookGrid.innerHTML = `
-                    <div class="error-message">
-                        <p>Could not load books.json.</p>
-                        <p>Note: If you are opening this file directly from your computer (file://), modern browsers block loading local JSON files for security reasons. You will need to view this through a local web server or upload it to a web host.</p>
-                    </div>`;
+                bookGrid.innerHTML = `<div class="error-message"><p>Could not load books.json.</p></div>`;
             });
 
-        // 2. The display function
+        // 2. The Advanced API Waterfall Function
+        async function findBookCover(isbn, imgElement) {
+            if (!isbn) {
+                imgElement.src = 'https://placehold.co/140x200/e2e8f0/64748b?text=No+ISBN';
+                return;
+            }
+
+            try {
+                // API 1: Google Books (Best quality for academic texts)
+                const gbResponse = await fetch(`https://www.googleapis.com/books/v1/volumes?q=isbn:${isbn}`);
+                const gbData = await gbResponse.json();
+                if (gbData.items && gbData.items[0].volumeInfo.imageLinks) {
+                    imgElement.src = gbData.items[0].volumeInfo.imageLinks.thumbnail.replace('http:', 'https:');
+                    return; // Stop searching! We found it.
+                }
+
+                // API 2: openBD (Great free API, often has global/international editions)
+                const obdResponse = await fetch(`https://api.openbd.jp/v1/get?isbn=${isbn}`);
+                const obdData = await obdResponse.json();
+                if (obdData && obdData[0] && obdData[0].summary && obdData[0].summary.cover) {
+                    imgElement.src = obdData[0].summary.cover;
+                    return; // Stop searching! We found it.
+                }
+
+                // API 3: Open Library (Using fetch to verify the image actually exists)
+                const olUrl = `https://covers.openlibrary.org/b/isbn/${isbn}-M.jpg?default=false`;
+                const olResponse = await fetch(olUrl);
+                if (olResponse.ok) {
+                    imgElement.src = olUrl;
+                    return; // Stop searching! We found it.
+                }
+
+                // API 4: Everything Failed. Use standard placeholder.
+                imgElement.src = 'https://placehold.co/140x200/e2e8f0/64748b?text=Cover+Not\\nAvailable';
+
+            } catch (error) {
+                console.error(`Error fetching cover for ISBN ${isbn}:`, error);
+                imgElement.src = 'https://placehold.co/140x200/e2e8f0/64748b?text=Network\\nError';
+            }
+        }
+
+        // 3. The Display Function
         function displayBooks(books) {
             bookGrid.innerHTML = ''; 
             
@@ -203,7 +230,6 @@
                 const title = book.title || "Unknown Title";
                 const author = book.primaryauthor || "Unknown Author";
                 
-                // Try originalisbn first, fallback to standard isbn array/object if needed based on your original JSON structure
                 let isbn = book.originalisbn || "";
                 if (!isbn && book.isbn) {
                    isbn = Array.isArray(book.isbn) ? book.isbn[0] : (book.isbn["0"] || "");
@@ -212,10 +238,11 @@
                 const card = document.createElement('div');
                 card.className = 'card';
                 
+                // Create image element with an initial loading state
                 const img = document.createElement('img');
                 img.className = 'book-cover';
                 img.alt = `Cover of ${title}`;
-                img.src = 'https://via.placeholder.com/140x200/e2e8f0/64748b?text=Loading...'; 
+                img.src = 'https://placehold.co/140x200/e2e8f0/64748b?text=Loading...'; 
 
                 const details = document.createElement('div');
                 details.innerHTML = `
@@ -228,29 +255,15 @@
                 card.appendChild(details);
                 bookGrid.appendChild(card);
 
-                if (isbn) {
-                    fetch(`https://www.googleapis.com/books/v1/volumes?q=isbn:${isbn}`)
-                        .then(response => response.json())
-                        .then(data => {
-                            if (data.items && data.items[0].volumeInfo.imageLinks) {
-                                img.src = data.items[0].volumeInfo.imageLinks.thumbnail.replace('http:', 'https:');
-                            } else {
-                                img.src = `https://covers.openlibrary.org/b/isbn/${isbn}-M.jpg?default=false`;
-                            }
-                        })
-                        .catch(() => {
-                            img.src = `https://covers.openlibrary.org/b/isbn/${isbn}-M.jpg?default=false`;
-                        });
+                // Start the background process to hunt down the image!
+                if (book.local_cover) {
+                    img.src = book.local_cover; // Always prioritize your manual upload first
                 } else {
-                    img.src = 'https://via.placeholder.com/140x200/e2e8f0/64748b?text=No+ISBN';
+                    findBookCover(isbn, img);
                 }
-
-                img.onerror = function() {
-                    this.onerror = null; 
-                    this.src = 'https://via.placeholder.com/140x200/e2e8f0/64748b?text=Cover+Not+Found';
-                };
             });
         }
     </script>
+
 </body>
 </html>
